@@ -1,31 +1,38 @@
 ﻿namespace RPNCalculatorLabs
 {
+    // Классы в отдельных файлах
     internal class Program
     {
-        static void Main(string[] args)
+        static void Main()
         {
-            Console.Write("Введите математическое выражение: ");
-            string expression = Console.ReadLine();
-            List<object> parsedExpression = Parse(expression);
-
-            List<object> rpn = ConvertToRPN(parsedExpression);
-            Console.WriteLine($"ОПЗ: {string.Join(" ", rpn)}");
-
-            float result = Calculate(rpn);
-            Console.WriteLine($"Результат: {result}");
-
-            Console.ReadLine();
-        }
-        static int GetPriority(object operation) // Определяет приоритет операций
-        {
-            switch (operation)
+            while (true)
             {
-                case '+': case '-': return 1;
-                case '*': case '/': return 2;
-                default: return 0;
+                Console.Write("Введите математическое выражение (для завершения работы введите q): ");
+                string expression = Console.ReadLine(); // При null крашится
+
+                if (expression == "q") break;
+
+                List<Token> parsedExpression = Parse(expression);
+                List<Token> rpn = ConvertToRPN(parsedExpression);
+                double result = Calculate(rpn);
+
+                Console.WriteLine($"Результат: {result}");
             }
         }
-        static float GetNumber(object operation, float fisrtOperand, float secondOperand) // Подсчитывает число
+        static int GetPriority(Token operation) // Определяет приоритет операций
+        {
+            if (operation is Operation op) // Выглядит страшно
+            {
+                switch (op.symbol)
+                {
+                    case '+': case '-': return 1;
+                    case '*': case '/': return 2;
+                    default: return 0;
+                }   
+            }
+            return 0;
+        }
+        static double GetNumber(object operation, double fisrtOperand, double secondOperand) // Подсчитывает число
         {
             switch (operation)
             {
@@ -36,62 +43,83 @@
                 default: return 0;
             }
         }
-        static List<object> Parse(string expression) // Парсит введенное выражение
+        static List<Token> Parse(string expression) // Парсит введенное выражение
         {
-            List<object> result = new List<object>();
+            List<Token> result = new();
             string number = "";
 
             foreach (char token in expression)
             {
-                if (token != ' ')
+                if (char.IsDigit(token) || token == ',') // Вроде как подружил с дробями
                 {
-                    if (!char.IsDigit(token))
+                    number += token;
+                }
+                else
+                {
+                    if (number != "")
                     {
-                        if (number != "") result.Add(number);
-                        result.Add(token);
+                        Number num = new() { value = double.Parse(number) };
+                        result.Add(num);
                         number = "";
                     }
-                    else
+                    if (token == '+' || token == '-' || token == '*' || token == '/')
                     {
-                        number += token;
+                        Operation op = new() { symbol = token };
+                        result.Add(op);
+                    }
+                    else if (token == '(' || token == ')')
+                    {
+                        Parenthesis bracket = new();
+                        if (token == '(')
+                        {
+                            bracket.opening = true;
+                        }
+                        result.Add(bracket);
                     }
                 }
             }
 
-            if (number != "") result.Add(number);
+            if (number != "") // Повторяется, +- такое же уже есть в foreach сверху, надо бы исправить как-нибудь
+            {
+                Number num = new() { value = double.Parse(number) };
+                result.Add(num);
+            }
 
             return result;
         }
-        static List<object> ConvertToRPN(List<object> expression) // Преобразует выражение в Обратную Польскую Нотацию (ОПН)
+        static List<Token> ConvertToRPN(List<Token> expression) // Преобразует выражение в Обратную Польскую Нотацию (ОПН)
         {
-            Stack<object> operations = new Stack<object>();
-            List<object> result = new List<object>();
+            Stack<Token> operations = new();
+            List<Token> result = new();
 
-            foreach (object token in expression)
+            foreach (Token token in expression)
             {
-                if (token is string)
+                if (token is Number number)
                 {
-                    result.Add(token);
+                    result.Add(number);
                 }
-                else if (token.Equals('+') || token.Equals('-') || token.Equals('*') || token.Equals('/'))
+                else if (token is Operation operation)
                 {
                     while (operations.Count > 0 && GetPriority(operations.Peek()) >= GetPriority(token))
                     {
                         result.Add(operations.Pop());
                     }
-                    operations.Push(token);
+                    operations.Push(operation);
                 }
-                else if (token.Equals('('))
+                else if (token is Parenthesis bracket)
                 {
-                    operations.Push(token);
-                }
-                else if (token.Equals(')'))
-                {
-                    while (operations.Count > 0 && !operations.Peek().Equals('('))
+                    if (bracket.opening)
                     {
-                        result.Add(operations.Pop());
+                        operations.Push(bracket);
                     }
-                    operations.Pop();
+                    else 
+                    {
+                        while (operations.Count > 0 && operations.Peek() is not Parenthesis)
+                        {
+                            result.Add(operations.Pop());
+                        }
+                        operations.Pop();
+                    }
                 }
             }
 
@@ -102,24 +130,28 @@
 
             return result;
         }
-        static float Calculate(List<object> rpn) // Считает итоговое выражение
+        static double Calculate(List<Token> rpn) // Считает итоговое выражение, на этот раз через стэк (спасибо Егор, без тебя бы никто не узнал)
         {
-            for (int i = 0; i < rpn.Count; i++)
+            Stack<double> numbers = new();
+
+            foreach(Token token in rpn)
             {
-                if (rpn[i] is char)
+                if (token is Number number)
                 {
-                    float fisrtNumber = Convert.ToSingle(rpn[i - 2]);
-                    float secondNumber = Convert.ToSingle(rpn[i - 1]);
+                    numbers.Push(number.value);
+                }
+                else if (token is Operation operation)
+                {
+                    double secondNum = numbers.Pop();
+                    double firstNum = numbers.Pop();
+                    char op = operation.symbol;
 
-                    float result = GetNumber(rpn[i], fisrtNumber, secondNumber);
-
-                    rpn.RemoveRange(i - 2, 3);
-                    rpn.Insert(i - 2, result);
-                    i -= 2;
+                    double resultedNum = GetNumber(op, firstNum, secondNum);
+                    numbers.Push(resultedNum);
                 }
             }
 
-            return (float)rpn[0];
+            return numbers.Pop();
         }
     }
 }
